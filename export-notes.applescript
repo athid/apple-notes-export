@@ -28,8 +28,8 @@ on writePerlScript()
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
 	set pl to pl & "my $links = <$fh>; close $fh;" & linefeed
 	set pl to pl & "$links =~ s/^\\s+|\\s+$//g if defined $links;" & linefeed
-	set pl to pl & "$text =~ s/<br\\s*\\/?>/ /gi;" & linefeed
-	set pl to pl & "$text =~ s/<\\/(div|p|li)>/\\n/gi;" & linefeed
+	set pl to pl & "$text =~ s/<br\\s*\\/?>/\\n/gi;" & linefeed
+	set pl to pl & "$text =~ s/<\\/(div|p|li|h[1-6])>/\\n/gi;" & linefeed
 	set pl to pl & "$text =~ s/<[^>]+>//g;" & linefeed
 	set pl to pl & "$text =~ s/&nbsp;/ /g;" & linefeed
 	set pl to pl & "$text =~ s/&lt;/</g;" & linefeed
@@ -38,6 +38,8 @@ on writePerlScript()
 	set pl to pl & "$text =~ s/&quot;/\"/g;" & linefeed
 	set pl to pl & "$text =~ s/&#(\\d+);/chr($1)/ge;" & linefeed
 	set pl to pl & "$text =~ s/&#x([0-9a-fA-F]+);/chr(hex($1))/ge;" & linefeed
+	set pl to pl & "$text =~ s/[ \\t]+$//mg;" & linefeed
+	set pl to pl & "$text =~ s/^[ \\t]+$//mg;" & linefeed
 	set pl to pl & "$text =~ s/\\n{3,}/\\n\\n/g;" & linefeed
 	set pl to pl & "$text =~ s/^\\s+|\\s+$//g;" & linefeed
 	set pl to pl & "my $body = $text;" & linefeed
@@ -140,6 +142,21 @@ tell application "Notes"
 	do shell script "rm -f " & quoted form of (exportRoot & "export-errors.log")
 	writePerlScript() of me
 	
+	-- Count total notes first so progress bar has an accurate total
+	tell me to set progress description to "Counting notes..."
+	tell me to set progress additional description to ""
+	set totalNotes to 0
+	repeat with acct in accounts
+		set fldrList to folders of acct
+		repeat with i from 1 to count of fldrList
+			set totalNotes to totalNotes + (count of notes of item i of fldrList)
+		end repeat
+	end repeat
+	
+	tell me to set progress total steps to totalNotes
+	tell me to set progress completed steps to 0
+	tell me to set progress description to "Exporting " & totalNotes & " notes..."
+	
 	repeat with acct in accounts
 		set acctName to name of acct
 		set safeAcct to my sanitizeName(acctName)
@@ -158,6 +175,8 @@ tell application "Notes"
 			repeat with j from 1 to count of noteList
 				set n to item j of noteList
 				try
+					set currentTitle to name of n
+					tell me to set progress additional description to currentTitle & " (" & (noteCount + skippedCount + 1) & " of " & totalNotes & ")"
 					my writeNote(n, folderPath)
 					set noteCount to noteCount + 1
 				on error errMsg
@@ -169,6 +188,7 @@ tell application "Notes"
 					end try
 					do shell script "echo " & quoted form of ("Skipped: " & noteName & " - " & errMsg) & " >> " & quoted form of (exportRoot & "export-errors.log")
 				end try
+				tell me to set progress completed steps to noteCount + skippedCount
 			end repeat
 		end repeat
 	end repeat
