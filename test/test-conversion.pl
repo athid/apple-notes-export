@@ -33,6 +33,22 @@ sub convert {
     $text =~ s{<(?:i|em)\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;
     $text =~ s{<(?:s|del|strike)\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;
 
+    # Checklists — block-level ul detection
+    $text =~ s{<ul([^>]*)>(.*?)</ul>}{
+        my ($attrs, $inner) = ($1, $2);
+        if ($attrs =~ /\bclass="[^"]*\bchecklist\b/) {
+            $inner =~ s/<li[^>]*\bclass="[^"]*\bchecked\b[^"]*"[^>]*>/- [x] /gi;
+            $inner =~ s/<li[^>]*data-done="YES"[^>]*>/- [x] /gi;
+            $inner =~ s/<li[^>]*>/- [ ] /gi;
+            $inner =~ s/<\/li>//gi;
+            $inner;
+        } else {
+            "<ul$attrs>$inner</ul>";
+        }
+    }gsei;
+    # Regular list items (outside checklist context)
+    $text =~ s/<li[^>]*>/- /gi;
+
     # === EXISTING tag-strip (unchanged) ===
     $text =~ s/<br\s*\/?>/\n/gi;
     $text =~ s/<\/(div|p|li|h[1-6])>/\n/gi;
@@ -68,5 +84,28 @@ ok(convert('<s>struck</s>'),           '~~struck~~', 'strikethrough <s>');
 ok(convert('<del>struck</del>'),       '~~struck~~', 'strikethrough <del>');
 ok(convert('<strike>struck</strike>'), '~~struck~~', 'strikethrough <strike>');
 ok(convert('<b><i>both</i></b>'),      '***both***', 'nested bold+italic');
+
+# --- Checklist tests ---
+ok(
+    convert('<ul class="checklist"><li class="checked"><p>Done</p></li><li><p>Todo</p></li></ul>'),
+    "- [x] Done\n- [ ] Todo",
+    'checklist with one checked, one unchecked'
+);
+ok(
+    convert('<ul class="checklist"><li data-done="YES"><p>Done</p></li></ul>'),
+    "- [x] Done",
+    'checklist data-done="YES" format'
+);
+ok(
+    convert('<ul class="checklist other-class"><li class="checked item"><p>Done</p></li></ul>'),
+    "- [x] Done",
+    'checklist with multiple classes'
+);
+# Regular list should produce plain bullets, not checkboxes
+ok(
+    convert('<ul><li>Item A</li><li>Item B</li></ul>'),
+    "- Item A\n- Item B",
+    'regular bullet list produces plain bullets'
+);
 
 exit $failures > 0 ? 1 : 0;
