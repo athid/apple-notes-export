@@ -22,18 +22,26 @@ on writePerlScript()
 	set pl to ""
 	set pl to pl & "use strict; use warnings; use utf8;" & linefeed
 	set pl to pl & "use open qw(:std :utf8);" & linefeed
-	set pl to pl & "my ($html_file, $links_file, $out_file, $title, $created, $modified) = @ARGV;" & linefeed
+	set pl to pl & "my ($html_file, $links_file, $images_file, $out_file, $title, $created, $modified) = @ARGV;" & linefeed
 	set pl to pl & "open(my $fh, '<:utf8', $html_file) or die $!;" & linefeed
 	set pl to pl & "local $/; my $text = <$fh>; close $fh;" & linefeed
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
 	set pl to pl & "my $links = <$fh>; close $fh;" & linefeed
 	set pl to pl & "$links =~ s/^\\s+|\\s+$//g if defined $links;" & linefeed
+	set pl to pl & "open(my $img_fh, '<:utf8', $images_file) or die $!;" & linefeed
+	set pl to pl & "my @images = grep { /\\S/ } split(/\\n/, do { local $/; <$img_fh> });" & linefeed
+	set pl to pl & "close $img_fh;" & linefeed
+	set pl to pl & "my $img_idx = 0;" & linefeed
 	-- Headings (must run before tag-strip; nested spans handled by subsequent tag-strip)
 	set pl to pl & "for my $n (1..6) { my $hashes = '#' x $n; $text =~ s{<h$n\\b[^>]*>(.*?)</h$n>}{\"\\n$hashes $1\\n\"}gsei; }" & linefeed
 	-- Inline formatting
 	set pl to pl & "$text =~ s{<(?:b|strong)\\b[^>]*>(.*?)</(?:b|strong)>}{**$1**}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:i|em)\\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:s|del|strike)\\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;" & linefeed
+	-- Inline images (consumed in document order from images_file)
+	set pl to pl & "$text =~ s/<img[^>]*>/" & linefeed
+	set pl to pl & "    $img_idx < scalar(@images) ? $images[$img_idx++] : ''" & linefeed
+	set pl to pl & "/gei;" & linefeed
 	-- Checklists (block-level ul.checklist detection)
 	set pl to pl & "$text =~ s{<ul([^>]*)>(.*?)</ul>}{" & linefeed
 	set pl to pl & "    my ($attrs, $inner) = ($1, $2);" & linefeed
