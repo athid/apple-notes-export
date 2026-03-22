@@ -19,7 +19,8 @@ sub ok {
 }
 
 sub convert {
-    my ($text) = @_;
+    my ($text, @images) = @_;
+    my $img_idx = 0;
 
     # === NEW CONVERSIONS (applied before tag-strip) ===
     # Headings
@@ -48,6 +49,11 @@ sub convert {
     }gsei;
     # Regular list items (outside checklist context)
     $text =~ s/<li[^>]*>/- /gi;
+
+    # Inline images (consumed in document order)
+    $text =~ s/<img[^>]*>/
+        $img_idx < scalar(@images) ? $images[$img_idx++] : ''
+    /gei;
 
     # === EXISTING tag-strip (unchanged) ===
     $text =~ s/<br\s*\/?>/\n/gi;
@@ -106,6 +112,24 @@ ok(
     convert('<ul><li>Item A</li><li>Item B</li></ul>'),
     "- Item A\n- Item B",
     'regular bullet list produces plain bullets'
+);
+
+# --- Inline image tests ---
+ok(
+    convert('<p>See <img src="x-coredata://abc"> below</p>', '![photo.jpg](MyNote/photo.jpg)'),
+    'See ![photo.jpg](MyNote/photo.jpg) below',
+    'single inline image replaced'
+);
+ok(
+    convert('<img src="a"><img src="b">',
+        '![a.jpg](Note/a.jpg)', '![b.jpg](Note/b.jpg)'),
+    '![a.jpg](Note/a.jpg)![b.jpg](Note/b.jpg)',
+    'two inline images consumed in order'
+);
+ok(
+    convert('<img src="icon.png">plain text'),
+    'plain text',
+    'unmatched img tag silently dropped'
 );
 
 exit $failures > 0 ? 1 : 0;
