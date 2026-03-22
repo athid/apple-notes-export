@@ -28,6 +28,13 @@ on writePerlScript()
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
 	set pl to pl & "my $links = <$fh>; close $fh;" & linefeed
 	set pl to pl & "$links =~ s/^\\s+|\\s+$//g if defined $links;" & linefeed
+	-- Headings (must run before tag-strip; nested spans handled by subsequent tag-strip)
+	set pl to pl & "for my $n (1..6) { my $hashes = '#' x $n; $text =~ s{<h$n\\b[^>]*>(.*?)</h$n>}{\"\\n$hashes $1\\n\"}gsei; }" & linefeed
+	-- Inline formatting
+	set pl to pl & "$text =~ s{<(?:b|strong)\\b[^>]*>(.*?)</(?:b|strong)>}{**$1**}gsi;" & linefeed
+	set pl to pl & "$text =~ s{<(?:i|em)\\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;" & linefeed
+	set pl to pl & "$text =~ s{<(?:s|del|strike)\\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;" & linefeed
+	-- Existing tag-strip (unchanged)
 	set pl to pl & "$text =~ s/<br\\s*\\/?>/\\n/gi;" & linefeed
 	set pl to pl & "$text =~ s/<\\/(div|p|li|h[1-6])>/\\n/gi;" & linefeed
 	set pl to pl & "$text =~ s/<[^>]+>//g;" & linefeed
