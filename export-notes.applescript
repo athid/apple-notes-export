@@ -34,6 +34,20 @@ on writePerlScript()
 	set pl to pl & "$text =~ s{<(?:b|strong)\\b[^>]*>(.*?)</(?:b|strong)>}{**$1**}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:i|em)\\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:s|del|strike)\\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;" & linefeed
+	-- Checklists (block-level ul.checklist detection)
+	set pl to pl & "$text =~ s{<ul([^>]*)>(.*?)</ul>}{" & linefeed
+	set pl to pl & "    my ($attrs, $inner) = ($1, $2);" & linefeed
+	set pl to pl & "    if ($attrs =~ /\\bclass=\"[^\"]*\\bchecklist\\b/) {" & linefeed
+	set pl to pl & "        $inner =~ s/<\\/li>//gi;" & linefeed
+	set pl to pl & "        $inner =~ s/<li[^>]*\\bclass=\"[^\"]*\\bchecked\\b[^\"]*\"[^>]*>/- [x] /gi;" & linefeed
+	set pl to pl & "        $inner =~ s/<li[^>]*data-done=\"YES\"[^>]*>/- [x] /gi;" & linefeed
+	set pl to pl & "        $inner =~ s/<li[^>]*>/- [ ] /gi;" & linefeed
+	set pl to pl & "        $inner;" & linefeed
+	set pl to pl & "    } else {" & linefeed
+	set pl to pl & "        \"<ul$attrs>$inner</ul>\";" & linefeed
+	set pl to pl & "    }" & linefeed
+	set pl to pl & "}gsei;" & linefeed
+	set pl to pl & "$text =~ s/<li[^>]*>/- /gi;" & linefeed
 	-- Existing tag-strip (unchanged)
 	set pl to pl & "$text =~ s/<br\\s*\\/?>/\\n/gi;" & linefeed
 	set pl to pl & "$text =~ s/<\\/(div|p|li|h[1-6])>/\\n/gi;" & linefeed
