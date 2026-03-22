@@ -29,6 +29,7 @@ on writePerlScript()
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
 	set pl to pl & "my $links = <$fh>; close $fh;" & linefeed
 	set pl to pl & "$links =~ s/^\\s+|\\s+$//g if defined $links;" & linefeed
+	set pl to pl & "$att_folder =~ s{/*$}{/};" & linefeed
 	set pl to pl & "my $img_counter = 0;" & linefeed
 	set pl to pl & "my @inline_image_links;" & linefeed
 	-- Headings (must run before tag-strip; nested spans handled by subsequent tag-strip)
@@ -40,12 +41,14 @@ on writePerlScript()
 	-- Inline images: extract base64 data URIs, decode to files, replace with markdown refs
 	set pl to pl & "$text =~ s{<img\\b[^>]*\\bsrc=\\\"data:image/([^;]+);base64,([^\\\"]*)\\\"[^>]*>}{" & linefeed
 	set pl to pl & "    $img_counter++;" & linefeed
-	set pl to pl & "    my $ext = lc($1); $ext =~ s/jpeg/jpg/;" & linefeed
+	set pl to pl & "    my ($mime, $b64) = ($1, $2);" & linefeed
+	set pl to pl & "    my $ext = lc($mime); $ext =~ s/jpeg/jpg/;" & linefeed
 	set pl to pl & "    my $fname = 'image-' . $img_counter . '.' . $ext;" & linefeed
-	set pl to pl & "    my $dest = $att_folder . '/' . $fname;" & linefeed
+	set pl to pl & "    my $dest = $att_folder . $fname;" & linefeed
 	set pl to pl & "    unless (-d $att_folder) { system('mkdir', '-p', $att_folder); }" & linefeed
-	set pl to pl & "    open(my $bin_fh, '>:raw', $dest) or warn 'Cannot write ' . $dest . \"\\n\";" & linefeed
-	set pl to pl & "    print $bin_fh decode_base64($2); close $bin_fh;" & linefeed
+	set pl to pl & "    if (open(my $bin_fh, '>:raw', $dest)) {" & linefeed
+	set pl to pl & "        print $bin_fh decode_base64($b64); close $bin_fh;" & linefeed
+	set pl to pl & "    } else { warn 'img write failed: ' . $dest . ': ' . $! . \"\\n\"; }" & linefeed
 	set pl to pl & "    my $md = '![' . $fname . '](' . $safe_title . '/' . $fname . ')';" & linefeed
 	set pl to pl & "    push @inline_image_links, $md;" & linefeed
 	set pl to pl & "    $md;" & linefeed
@@ -171,8 +174,8 @@ on writeNote(theNote, folderPath)
 	set tmpLinks to "/tmp/apple_notes_links_tmp.txt"
 	do shell script "printf '%s' " & quoted form of noteBody & " > " & quoted form of tmpHtml
 	do shell script "printf '%s' " & quoted form of attachmentLinks & " > " & quoted form of tmpLinks
-
-	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr & " " & quoted form of attachmentFolder & " " & quoted form of safeTitle
+	
+	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr & " " & quoted form of attachmentFolder & " " & quoted form of safeTitle & " 2>> " & quoted form of (exportRoot & "export-errors.log")
 end writeNote
 
 tell application "Notes"

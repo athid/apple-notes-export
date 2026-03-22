@@ -26,6 +26,7 @@ system('mkdir', '-p', $TMPDIR);
 sub convert {
     my ($text, $att_folder, $safe_title) = @_;
     $att_folder //= $TMPDIR;
+    $att_folder =~ s{/*$}{/};  # ensure single trailing slash
     $safe_title //= 'TestNote';
     my $img_counter = 0;
     my @inline_image_links;
@@ -45,12 +46,14 @@ sub convert {
     # Inline images: extract base64 data URIs, decode to files
     $text =~ s{<img\b[^>]*\bsrc="data:image/([^;]+);base64,([^"]+)"[^>]*>}{
         $img_counter++;
-        my $ext = lc($1); $ext =~ s/jpeg/jpg/;
+        my ($mime, $b64) = ($1, $2);
+        my $ext = lc($mime); $ext =~ s/jpeg/jpg/;
         my $fname = 'image-' . $img_counter . '.' . $ext;
-        my $dest = $att_folder . '/' . $fname;
+        my $dest = $att_folder . $fname;
         unless (-d $att_folder) { system('mkdir', '-p', $att_folder); }
-        open(my $bin_fh, '>:raw', $dest) or warn 'Cannot write ' . $dest . "\n";
-        print $bin_fh decode_base64($2); close $bin_fh;
+        if (open(my $bin_fh, '>:raw', $dest)) {
+            print $bin_fh decode_base64($b64); close $bin_fh;
+        } else { warn 'img write failed: ' . $dest . ': ' . $! . "\n"; }
         my $md = '![' . $fname . '](' . $safe_title . '/' . $fname . ')';
         push @inline_image_links, $md;
         $md;
