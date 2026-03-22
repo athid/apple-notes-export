@@ -22,26 +22,35 @@ on writePerlScript()
 	set pl to ""
 	set pl to pl & "use strict; use warnings; use utf8;" & linefeed
 	set pl to pl & "use open qw(:std :utf8);" & linefeed
-	set pl to pl & "my ($html_file, $links_file, $images_file, $out_file, $title, $created, $modified) = @ARGV;" & linefeed
+	set pl to pl & "use MIME::Base64;" & linefeed
+	set pl to pl & "my ($html_file, $links_file, $out_file, $title, $created, $modified, $att_folder, $safe_title) = @ARGV;" & linefeed
 	set pl to pl & "open(my $fh, '<:utf8', $html_file) or die $!;" & linefeed
 	set pl to pl & "local $/; my $text = <$fh>; close $fh;" & linefeed
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
 	set pl to pl & "my $links = <$fh>; close $fh;" & linefeed
 	set pl to pl & "$links =~ s/^\\s+|\\s+$//g if defined $links;" & linefeed
-	set pl to pl & "open(my $img_fh, '<:utf8', $images_file) or die $!;" & linefeed
-	set pl to pl & "my @images = grep { /\\S/ } split(/\\n/, do { local $/; <$img_fh> });" & linefeed
-	set pl to pl & "close $img_fh;" & linefeed
-	set pl to pl & "my $img_idx = 0;" & linefeed
+	set pl to pl & "my $img_counter = 0;" & linefeed
+	set pl to pl & "my @inline_image_links;" & linefeed
 	-- Headings (must run before tag-strip; nested spans handled by subsequent tag-strip)
 	set pl to pl & "for my $n (1..6) { my $hashes = '#' x $n; $text =~ s{<h$n\\b[^>]*>(.*?)</h$n>}{\"\\n$hashes $1\\n\"}gsei; }" & linefeed
 	-- Inline formatting
 	set pl to pl & "$text =~ s{<(?:b|strong)\\b[^>]*>(.*?)</(?:b|strong)>}{**$1**}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:i|em)\\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:s|del|strike)\\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;" & linefeed
-	-- Inline images (consumed in document order from images_file)
-	set pl to pl & "$text =~ s/<img[^>]*>/" & linefeed
-	set pl to pl & "    $img_idx < scalar(@images) ? $images[$img_idx++] : ''" & linefeed
-	set pl to pl & "/gei;" & linefeed
+	-- Inline images: extract base64 data URIs, decode to files, replace with markdown refs
+	set pl to pl & "$text =~ s{<img\\b[^>]*\\bsrc=\\\"data:image/([^;]+);base64,([^\\\"]*)\\\"[^>]*>}{" & linefeed
+	set pl to pl & "    $img_counter++;" & linefeed
+	set pl to pl & "    my $ext = lc($1); $ext =~ s/jpeg/jpg/;" & linefeed
+	set pl to pl & "    my $fname = 'image-' . $img_counter . '.' . $ext;" & linefeed
+	set pl to pl & "    my $dest = $att_folder . '/' . $fname;" & linefeed
+	set pl to pl & "    unless (-d $att_folder) { system('mkdir', '-p', $att_folder); }" & linefeed
+	set pl to pl & "    open(my $bin_fh, '>:raw', $dest) or warn 'Cannot write ' . $dest . \"\\n\";" & linefeed
+	set pl to pl & "    print $bin_fh decode_base64($2); close $bin_fh;" & linefeed
+	set pl to pl & "    my $md = '![' . $fname . '](' . $safe_title . '/' . $fname . ')';" & linefeed
+	set pl to pl & "    push @inline_image_links, $md;" & linefeed
+	set pl to pl & "    $md;" & linefeed
+	set pl to pl & "}gsei;" & linefeed
+	set pl to pl & "$text =~ s/<img[^>]*>//gi;" & linefeed
 	-- Checklists (block-level ul.checklist detection)
 	set pl to pl & "$text =~ s{<ul([^>]*)>(.*?)</ul>}{" & linefeed
 	set pl to pl & "    my ($attrs, $inner) = ($1, $2);" & linefeed
@@ -72,6 +81,10 @@ on writePerlScript()
 	set pl to pl & "$text =~ s/\\n{3,}/\\n\\n/g;" & linefeed
 	set pl to pl & "$text =~ s/^\\s+|\\s+$//g;" & linefeed
 	set pl to pl & "my $body = $text;" & linefeed
+	set pl to pl & "if (@inline_image_links) {" & linefeed
+	set pl to pl & "    $links = '' unless defined $links;" & linefeed
+	set pl to pl & "    $links .= ($links ? \"\\n\" : '') . join(\"\\n\", @inline_image_links);" & linefeed
+	set pl to pl & "}" & linefeed
 	set pl to pl & "$body .= \"\\n\\n## Attachments\\n\\n$links\" if $links;" & linefeed
 	set pl to pl & "my $fm = \"---\\ntitle: $title\\ncreated: $created\\nmodified: $modified\\n---\\n\\n$body\\n\";" & linefeed
 	set pl to pl & "open(my $out, '>:utf8', $out_file) or die $!;" & linefeed
@@ -123,7 +136,6 @@ on writeNote(theNote, folderPath)
 	-- Export attachments
 	set attachmentFolder to folderPath & safeTitle & "/"
 	set attachmentLinks to ""
-	set imageLinks to ""
 	repeat with attItem in attData
 		set attName to item 1 of attItem
 		set attURL to item 2 of attItem
@@ -145,7 +157,6 @@ on writeNote(theNote, folderPath)
 				set attExt to do shell script "echo " & quoted form of relName & " | sed 's/.*\\.//'"
 				if attExt is in {"jpg", "jpeg", "png", "gif", "webp", "heic", "svg"} then
 					set attachmentLinks to attachmentLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
-					set imageLinks to imageLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
 				else
 					set attachmentLinks to attachmentLinks & "[" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
 				end if
@@ -158,12 +169,10 @@ on writeNote(theNote, folderPath)
 	
 	set tmpHtml to "/tmp/apple_notes_export_tmp.html"
 	set tmpLinks to "/tmp/apple_notes_links_tmp.txt"
-	set tmpImages to "/tmp/apple_notes_images_tmp.txt"
 	do shell script "printf '%s' " & quoted form of noteBody & " > " & quoted form of tmpHtml
 	do shell script "printf '%s' " & quoted form of attachmentLinks & " > " & quoted form of tmpLinks
-	do shell script "printf '%s' " & quoted form of imageLinks & " > " & quoted form of tmpImages
 
-	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of tmpImages & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr
+	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr & " " & quoted form of attachmentFolder & " " & quoted form of safeTitle
 end writeNote
 
 tell application "Notes"
