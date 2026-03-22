@@ -123,6 +123,7 @@ on writeNote(theNote, folderPath)
 	-- Export attachments
 	set attachmentFolder to folderPath & safeTitle & "/"
 	set attachmentLinks to ""
+	set imageLinks to ""
 	repeat with attItem in attData
 		set attName to item 1 of attItem
 		set attURL to item 2 of attItem
@@ -144,6 +145,7 @@ on writeNote(theNote, folderPath)
 				set attExt to do shell script "echo " & quoted form of relName & " | sed 's/.*\\.//'"
 				if attExt is in {"jpg", "jpeg", "png", "gif", "webp", "heic", "svg"} then
 					set attachmentLinks to attachmentLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
+					set imageLinks to imageLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
 				else
 					set attachmentLinks to attachmentLinks & "[" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
 				end if
@@ -156,10 +158,12 @@ on writeNote(theNote, folderPath)
 	
 	set tmpHtml to "/tmp/apple_notes_export_tmp.html"
 	set tmpLinks to "/tmp/apple_notes_links_tmp.txt"
+	set tmpImages to "/tmp/apple_notes_images_tmp.txt"
 	do shell script "printf '%s' " & quoted form of noteBody & " > " & quoted form of tmpHtml
 	do shell script "printf '%s' " & quoted form of attachmentLinks & " > " & quoted form of tmpLinks
-	
-	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr
+	do shell script "printf '%s' " & quoted form of imageLinks & " > " & quoted form of tmpImages
+
+	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of tmpImages & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr
 end writeNote
 
 tell application "Notes"
