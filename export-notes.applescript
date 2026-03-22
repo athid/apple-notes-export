@@ -172,8 +172,8 @@ on writeNote(theNote, folderPath)
 	
 	set tmpHtml to "/tmp/apple_notes_export_tmp.html"
 	set tmpLinks to "/tmp/apple_notes_links_tmp.txt"
-	do shell script "/bin/cat > " & quoted form of tmpHtml with input noteBody
-	do shell script "/bin/cat > " & quoted form of tmpLinks with input attachmentLinks
+	do shell script ("/bin/cat > " & quoted form of tmpHtml) with input noteBody
+	do shell script ("/bin/cat > " & quoted form of tmpLinks) with input attachmentLinks
 	
 	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr & " " & quoted form of attachmentFolder & " " & quoted form of safeTitle & " 2>> " & quoted form of (exportRoot & "export-errors.log")
 end writeNote
