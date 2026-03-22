@@ -3,6 +3,8 @@
 --   ~/Desktop/NotesExport/<Account>/<Folder>/<Note>.md
 --   ~/Desktop/NotesExport/<Account>/<Folder>/<Note>/attachment.jpg
 -- Run in Script Editor
+use framework "Foundation"
+use scripting additions
 
 property exportRoot : (POSIX path of (path to desktop)) & "NotesExport/"
 property perlScript : "/tmp/notes_exporter.pl"
@@ -23,7 +25,9 @@ on writePerlScript()
 	set pl to pl & "use strict; use warnings; use utf8;" & linefeed
 	set pl to pl & "use open qw(:std :utf8);" & linefeed
 	set pl to pl & "use MIME::Base64;" & linefeed
-	set pl to pl & "my ($html_file, $links_file, $out_file, $title, $created, $modified, $att_folder, $safe_title) = @ARGV;" & linefeed
+	set pl to pl & "use Encode qw(decode_utf8 encode_utf8);" & linefeed
+	set pl to pl & "use URI::Escape qw(uri_escape_utf8);" & linefeed
+	set pl to pl & "my ($html_file, $links_file, $out_file, $title, $created, $modified, $att_folder, $safe_title) = map { decode_utf8($_) } @ARGV;" & linefeed
 	set pl to pl & "open(my $fh, '<:utf8', $html_file) or die $!;" & linefeed
 	set pl to pl & "local $/; my $text = <$fh>; close $fh;" & linefeed
 	set pl to pl & "open($fh, '<:utf8', $links_file) or die $!;" & linefeed
@@ -39,6 +43,7 @@ on writePerlScript()
 	set pl to pl & "$text =~ s{<(?:b|strong)\\b[^>]*>(.*?)</(?:b|strong)>}{**$1**}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:i|em)\\b[^>]*>(.*?)</(?:i|em)>}{*$1*}gsi;" & linefeed
 	set pl to pl & "$text =~ s{<(?:s|del|strike)\\b[^>]*>(.*?)</(?:s|del|strike)>}{~~$1~~}gsi;" & linefeed
+	set pl to pl & "$text =~ s{<(?:tt|code)\\b[^>]*>(.*?)</(?:tt|code)>}{`$1`}gsi;" & linefeed
 	-- Inline images: extract base64 data URIs, decode to files, replace with markdown refs
 	set pl to pl & "$text =~ s{<img\\b[^>]*\\bsrc=\\\"data:image/([^;]+);base64,([^\\\"]*)\\\"[^>]*>}{" & linefeed
 	set pl to pl & "    $img_counter++;" & linefeed
@@ -66,6 +71,32 @@ on writePerlScript()
 	set pl to pl & "    } else {" & linefeed
 	set pl to pl & "        \"<ul$attrs>$inner</ul>\";" & linefeed
 	set pl to pl & "    }" & linefeed
+	set pl to pl & "}gsei;" & linefeed
+	-- Ordered lists
+	set pl to pl & "$text =~ s{<ol\\b[^>]*>(.*?)</ol>}{" & linefeed
+	set pl to pl & "    my ($inner, $n) = ($1, 0);" & linefeed
+	set pl to pl & "    $inner =~ s{<\\/li>}{}gi;" & linefeed
+	set pl to pl & "    $inner =~ s{<li[^>]*>}{++$n . \". \"}gei;" & linefeed
+	set pl to pl & "    $inner;" & linefeed
+	set pl to pl & "}gsei;" & linefeed
+	-- Tables
+	set pl to pl & "$text =~ s{<table\\b[^>]*>(.*?)</table>}{" & linefeed
+	set pl to pl & "    my ($tbl, @rows) = $1;" & linefeed
+	set pl to pl & "    while ($tbl =~ m{<tr\\b[^>]*>(.*?)</tr>}gsi) {" & linefeed
+	set pl to pl & "        my ($row, @cells) = $1;" & linefeed
+	set pl to pl & "        while ($row =~ m{<t[dh]\\b[^>]*>(.*?)</t[dh]>}gsi) {" & linefeed
+	set pl to pl & "            my $c = $1; $c =~ s/<[^>]+>//g; $c =~ s/^\\s+|\\s+$//g; $c =~ s/\\|/\\\\|/g;" & linefeed
+	set pl to pl & "            push @cells, $c;" & linefeed
+	set pl to pl & "        }" & linefeed
+	set pl to pl & "        push @rows, \\@cells if @cells;" & linefeed
+	set pl to pl & "    }" & linefeed
+	set pl to pl & "    if (@rows) {" & linefeed
+	set pl to pl & "        my $ncols = scalar @{$rows[0]};" & linefeed
+	set pl to pl & "        my $out = \"|\" . join(\"|\", @{$rows[0]}) . \"|\\n\";" & linefeed
+	set pl to pl & "        $out .= \"|\" . join(\"|\", (\"---\") x $ncols) . \"|\\n\";" & linefeed
+	set pl to pl & "        for my $i (1..$#rows) { $out .= \"|\" . join(\"|\", @{$rows[$i]}) . \"|\\n\"; }" & linefeed
+	set pl to pl & "        $out;" & linefeed
+	set pl to pl & "    } else { \"\"; }" & linefeed
 	set pl to pl & "}gsei;" & linefeed
 	set pl to pl & "$text =~ s/<li[^>]*>/- /gi;" & linefeed
 	-- Existing tag-strip (unchanged)
@@ -142,29 +173,57 @@ on writeNote(theNote, folderPath)
 	repeat with attItem in attData
 		set attName to item 1 of attItem
 		set attURL to item 2 of attItem
-		try
-			set attSrcPath to do shell script "perl -MURI::Escape -e 'print uri_unescape(substr($ARGV[0], 7))' " & quoted form of attURL
-			set attExists to do shell script "[ -f " & quoted form of attSrcPath & " ] && echo yes || echo no"
-			if attExists is "yes" then
-				do shell script "mkdir -p " & quoted form of attachmentFolder
-				set attDest to attachmentFolder & attName
-				set attCounter to 1
-				repeat
-					set attDestExists to do shell script "[ -f " & quoted form of attDest & " ] && echo yes || echo no"
-					if attDestExists is "no" then exit repeat
-					set attDest to attachmentFolder & attCounter & "-" & attName
-					set attCounter to attCounter + 1
-				end repeat
-				do shell script "cp " & quoted form of attSrcPath & " " & quoted form of attDest
-				set relName to do shell script "basename " & quoted form of attDest
-				set attExt to do shell script "echo " & quoted form of relName & " | sed 's/.*\\.//'"
-				if attExt is in {"jpg", "jpeg", "png", "gif", "webp", "heic", "svg"} then
-					set attachmentLinks to attachmentLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
-				else
-					set attachmentLinks to attachmentLinks & "[" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
+		if attName is missing value then set attName to "unnamed"
+		
+		-- Resolve source path: prefer URL, fall back to searching Notes Media folder by filename
+		set attSrcPath to ""
+		if attURL is not missing value then
+			try
+				set attSrcPath to do shell script "perl -MURI::Escape -e 'print uri_unescape(substr($ARGV[0], 7))' " & quoted form of attURL
+			end try
+		end if
+		if attSrcPath is "" and attName is not "unnamed" then
+			try
+				set findResult to do shell script "find \"$HOME/Library/Group Containers/group.com.apple.notes/Accounts\" -name " & quoted form of attName & " -type f 2>/dev/null | head -2"
+				if findResult is not "" and findResult does not contain linefeed and findResult does not contain return then
+					set attSrcPath to findResult
+				else if findResult contains linefeed or findResult contains return then
+					set attachmentLinks to attachmentLinks & "<!-- EXPORT-SKIPPED: " & attName & " (multiple files found, ambiguous) -->" & linefeed
+					set attSrcPath to "SKIP"
 				end if
-			end if
-		end try
+			end try
+		end if
+		
+		if attSrcPath is "" then
+			set attachmentLinks to attachmentLinks & "<!-- EXPORT-SKIPPED: " & attName & " (no URL available) -->" & linefeed
+		else if attSrcPath is not "SKIP" then
+			try
+				set attExists to do shell script "[ -f " & quoted form of attSrcPath & " ] && echo yes || echo no"
+				if attExists is "yes" then
+					do shell script "mkdir -p " & quoted form of attachmentFolder
+					set attDest to attachmentFolder & attName
+					set attCounter to 1
+					repeat
+						set attDestExists to do shell script "[ -f " & quoted form of attDest & " ] && echo yes || echo no"
+						if attDestExists is "no" then exit repeat
+						set attDest to attachmentFolder & attCounter & "-" & attName
+						set attCounter to attCounter + 1
+					end repeat
+					do shell script "cp " & quoted form of attSrcPath & " " & quoted form of attDest
+					set relName to do shell script "basename " & quoted form of attDest
+					set attExt to do shell script "echo " & quoted form of relName & " | sed 's/.*\\.//'"
+					if attExt is in {"jpg", "jpeg", "png", "gif", "webp", "heic", "svg"} then
+						set attachmentLinks to attachmentLinks & "![" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
+					else
+						set attachmentLinks to attachmentLinks & "[" & relName & "](" & safeTitle & "/" & relName & ")" & linefeed
+					end if
+				else
+					set attachmentLinks to attachmentLinks & "<!-- EXPORT-SKIPPED: " & attName & " (file not found at " & attSrcPath & ") -->" & linefeed
+				end if
+			on error errMsg
+				set attachmentLinks to attachmentLinks & "<!-- EXPORT-SKIPPED: " & attName & " (" & errMsg & ") -->" & linefeed
+			end try
+		end if
 	end repeat
 	
 	set createdStr to my formatDate(noteCreated)
@@ -172,8 +231,9 @@ on writeNote(theNote, folderPath)
 	
 	set tmpHtml to "/tmp/apple_notes_export_tmp.html"
 	set tmpLinks to "/tmp/apple_notes_links_tmp.txt"
-	do shell script ("/bin/cat > " & quoted form of tmpHtml) with input noteBody
-	do shell script ("/bin/cat > " & quoted form of tmpLinks) with input attachmentLinks
+	set utf8 to current application's NSUTF8StringEncoding
+	(current application's NSString's stringWithString:noteBody)'s writeToFile:tmpHtml atomically:false encoding:utf8 |error|:(missing value)
+	(current application's NSString's stringWithString:attachmentLinks)'s writeToFile:tmpLinks atomically:false encoding:utf8 |error|:(missing value)
 	
 	do shell script "perl " & quoted form of perlScript & " " & quoted form of tmpHtml & " " & quoted form of tmpLinks & " " & quoted form of finalPath & " " & quoted form of noteTitle & " " & quoted form of createdStr & " " & quoted form of modifiedStr & " " & quoted form of attachmentFolder & " " & quoted form of safeTitle & " 2>> " & quoted form of (exportRoot & "export-errors.log")
 end writeNote
